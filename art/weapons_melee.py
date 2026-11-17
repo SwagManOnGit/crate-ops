@@ -315,6 +315,12 @@ def shell(name, tag, d, cells, z0=-9.0, z1=9.0, smooth=3, r=0.0, parts='wpft'):
     return blob(name, tag, lambda b: hand(b, d, parts), 0.1, smooth, [(cob, 'INTERSECT')])
 
 
+def fshell(name, tag, d, f, s0, s1, z0=-9.0, pad=0.5, r=0.0, curl=1.3):
+    """Shell around a single finger only, so neighbouring fingers never bleed into it."""
+    cob = region(name + '_clip', [fseg(f, s0, s1, pad)], z0, 9.0, r)
+    return blob(name, tag, lambda b: _chain(b, f, d, curl), 0.09, 3, [(cob, 'INTERSECT')])
+
+
 def freeze():
     """Apply the remesh stacks once so the three bake passes do not re-evaluate them."""
     bpy.context.view_layer.update()
@@ -339,9 +345,12 @@ def gauntlet():
     base_hand('paint')
     shell('knuckle', 'poly', 0.45, [[(7.2, 4.6), (10.3, 4.55), (11.3, 2.2), (11.6, 0.7), (11.2, -1.5), (10.0, -4.2),
                                      (6.9, -4.3), (6.5, 0.0)]], 0.25, 9, r=0.7, parts='pf')
-    shell('fingers_a', 'accent', 0.24, [fseg(f, 0.17, 0.4) for f in FING] + [fseg(THUMB, 0.34, 0.62)], -0.45, 9, r=0.25, parts='ft')
-    shell('fingers_b', 'paint', 0.24, [fseg(f, 0.49, 0.7) for f in FING], -0.6, 9, r=0.25, parts='ft')
-    shell('tips', 'rubber', 0.12, [fseg(f, 0.87, 1.2) for f in FING] + [fseg(THUMB, 0.84, 1.2)], -9, 9, parts='ft')
+    for i, f in enumerate(FING):
+        fshell('fa%d' % i, 'accent', 0.24, f, 0.17, 0.4, -0.45, r=0.25)
+        fshell('fb%d' % i, 'paint', 0.24, f, 0.49, 0.7, -0.6, r=0.25)
+        fshell('ft%d' % i, 'rubber', 0.12, f, 0.87, 1.2)
+    fshell('ta', 'accent', 0.24, THUMB, 0.34, 0.62, -1.4, r=0.25, curl=0.5)
+    fshell('tt', 'rubber', 0.12, THUMB, 0.84, 1.2, curl=0.5)
     shell('back_bars', 'accent', 0.2, [[(1.4 + i * 1.75, -2.9), (2.5 + i * 1.75, -2.9), (3.6 + i * 1.75, 2.5), (2.5 + i * 1.75, 2.5)]
                                        for i in range(3)], 0.3, 9, r=0.3, parts='pw')
     shell('strap', 'accent', 0.3, [rect(-3.7, -1.5, -12, 12)], -9, 9, parts='wp')
@@ -367,7 +376,8 @@ def wraps():
     shell('diag_c', 'paint', 0.3, [slab(1.0, 0.0, 72, 2.0)], -9, 9, parts='wpt')
     shell('knuck_a', 'paint', 0.34, [slab(8.9, 0.0, 80, 2.2)], -9, 9, parts='pf')
     shell('knuck_b', 'paint', 0.46, [slab(7.5, 0.0, 99, 2.1)], -9, 9, parts='pf')
-    shell('fingers', 'paint', 0.2, [fseg(f, 0.2, 0.43, 0.6) for f in FING], -9, 9, parts='f')
+    for i, f in enumerate(FING):
+        fshell('fw%d' % i, 'paint', 0.2, f, 0.2, 0.43, pad=0.6)
     shell('thumb', 'paint', 0.24, [fseg(THUMB, 0.05, 0.4, 0.7)], -9, 9, parts='tp')
     shell('pad', 'rubber', 0.6, [[(9.7, 3.9), (10.9, 2.0), (11.2, 0.6), (10.8, -1.6), (9.6, -3.9), (8.6, -3.8), (9.2, 0.2), (8.8, 3.8)]],
           0.4, 9, r=0.4, parts='pf')
