@@ -3,3 +3,4 @@ dist
 *.zip
 art/out
 *.blend1
+__pycache__

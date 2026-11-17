@@ -181,11 +181,11 @@ def talon():
         t = k / (n - 1) * 0.992
         a = 96 - 86 * t
         rc = 11.8 - 1.1 * t * t
-        w = 1.6 * (1 - t ** 1.8) ** 0.85
+        w = 1.85 * (1 - t ** 1.8) ** 0.85
         S.append(polar(rc + w, a))
         E.append(polar(rc - w, a))
     blade('blade', S, E, 0.3, grind=0.5, edge=0.9, fuller=(0.13, 0.33, 0.13, 3, 30))
-    solid('bolster', band(0, 0, 10.05, 13.55, 93, 102, 4), 1.02, 'steel', bevel=0.2, seg=4)
+    solid('bolster', band(0, 0, 9.8, 13.8, 93, 102, 4), 1.02, 'steel', bevel=0.2, seg=4)
     hd = solid('handle', band(0, 0, 10.35, 13.25, 101, 168, 22), 0.96, 'accent', bevel=0.36, seg=4)
     slots(hd, 'grooves', [rot(rect(10.0, 13.6, -0.13, 0.13), a) for a in range(108, 162, 5)], 0.8, 3, 'poly')
     plate('inlay', band(0, 0, 11.35, 12.25, 105, 164, 20), 0.96, 0.09, 'rubber', bevel=0.05)
@@ -279,20 +279,25 @@ def _chain(b, f, d, curl=1.3):
         b.ball(base[0] + ca * L * s, base[1] + sa * L * s, base[2] - curl * s ** 1.7, r + d, seg=14)
 
 
-def hand(b, d=0.0):
-    b.ball(4.6, 0.05, -0.15, 1, 5.3 + d, 4.45 + d, 1.75 + d, 32)
-    b.ball(7.6, 0.0, 0.0, 1, 2.6 + d, 4.15 + d, 1.6 + d, 24)
-    b.ball(2.9, 3.3, -0.6, 1, 3.0 + d, 2.0 + d, 1.5 + d, 24)
-    x = -10.6
-    while x <= 0.8:
-        fl = min(1.0, max(0.0, (-5.5 - x) / 4.0))
-        b.ball(x, 0.0, -0.15, 1, 1.3 + d, 3.4 + 0.55 * fl + d, 2.1 + 0.35 * fl + d, 24)
-        x += 0.6
-    for f in FING:
-        base, _ang, _L, r0, _r1 = f
-        b.ball(base[0] - 0.25, base[1], base[2] + 0.12, r0 * 1.2 + d, seg=16)
-        _chain(b, f, d)
-    _chain(b, THUMB, d, curl=0.5)
+def hand(b, d=0.0, parts='wpft'):
+    """Hand primitives inflated by d. parts: w = wrist/cuff, p = palm, f = fingers, t = thumb."""
+    if 'p' in parts:
+        b.ball(4.6, 0.05, -0.15, 1, 5.3 + d, 4.45 + d, 1.75 + d, 32)
+        b.ball(7.6, 0.0, 0.0, 1, 2.6 + d, 4.15 + d, 1.6 + d, 24)
+        b.ball(2.9, 3.3, -0.6, 1, 3.0 + d, 2.0 + d, 1.5 + d, 24)
+    if 'w' in parts:
+        x = -10.6
+        while x <= 0.8:   # closely spaced so the union has no visible scallops
+            fl = min(1.0, max(0.0, (-5.5 - x) / 4.0))
+            b.ball(x, 0.0, -0.15, 1, 2.2 + d, 3.4 + 0.55 * fl + d, 2.1 + 0.35 * fl + d, 24)
+            x += 0.3
+    if 'f' in parts:
+        for f in FING:
+            base, _ang, _L, r0, _r1 = f
+            b.ball(base[0] - 0.25, base[1], base[2] + 0.12, r0 * 1.2 + d, seg=16)
+            _chain(b, f, d)
+    if 't' in parts:
+        _chain(b, THUMB, d, curl=0.5)
 
 
 def slab(cx, cy, ang, w, L=30.0):
@@ -304,10 +309,21 @@ def fseg(f, s0, s1, pad=0.5):
     return move(rot(rect(L * s0, L * s1, -(r0 + pad), r0 + pad), ang), base[0], base[1])
 
 
-def shell(name, tag, d, cells, z0=-9.0, z1=9.0, smooth=2, r=0.0):
+def shell(name, tag, d, cells, z0=-9.0, z1=9.0, smooth=3, r=0.0, parts='wpft'):
     """A layer that hugs the hand: the hand inflated by d, kept only inside the given cells."""
     cob = region(name + '_clip', cells, z0, z1, r)
-    return blob(name, tag, lambda b: hand(b, d), 0.11, smooth, [(cob, 'INTERSECT')])
+    return blob(name, tag, lambda b: hand(b, d, parts), 0.1, smooth, [(cob, 'INTERSECT')])
+
+
+def freeze():
+    """Apply the remesh stacks once so the three bake passes do not re-evaluate them."""
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    for ob in gunkit._parts:
+        if any(m.type == 'REMESH' for m in ob.modifiers):
+            me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+            ob.modifiers.clear()
+            ob.data = me
 
 
 def base_hand(tag):
@@ -322,17 +338,18 @@ def base_hand(tag):
 def gauntlet():
     base_hand('paint')
     shell('knuckle', 'poly', 0.45, [[(7.2, 4.6), (10.3, 4.55), (11.3, 2.2), (11.6, 0.7), (11.2, -1.5), (10.0, -4.2),
-                                     (6.9, -4.3), (6.5, 0.0)]], 0.25, 9, smooth=2, r=0.7)
-    shell('fingers_a', 'accent', 0.24, [fseg(f, 0.17, 0.4) for f in FING] + [fseg(THUMB, 0.34, 0.62)], -0.45, 9, smooth=2, r=0.25)
-    shell('fingers_b', 'accent', 0.24, [fseg(f, 0.49, 0.69) for f in FING], -0.6, 9, smooth=2, r=0.25)
-    shell('tips', 'rubber', 0.12, [fseg(f, 0.84, 1.2) for f in FING] + [fseg(THUMB, 0.8, 1.2)], -9, 9, smooth=2)
+                                     (6.9, -4.3), (6.5, 0.0)]], 0.25, 9, r=0.7, parts='pf')
+    shell('fingers_a', 'accent', 0.24, [fseg(f, 0.17, 0.4) for f in FING] + [fseg(THUMB, 0.34, 0.62)], -0.45, 9, r=0.25, parts='ft')
+    shell('fingers_b', 'paint', 0.24, [fseg(f, 0.49, 0.7) for f in FING], -0.6, 9, r=0.25, parts='ft')
+    shell('tips', 'rubber', 0.12, [fseg(f, 0.87, 1.2) for f in FING] + [fseg(THUMB, 0.84, 1.2)], -9, 9, parts='ft')
     shell('back_bars', 'accent', 0.2, [[(1.4 + i * 1.75, -2.9), (2.5 + i * 1.75, -2.9), (3.6 + i * 1.75, 2.5), (2.5 + i * 1.75, 2.5)]
-                                       for i in range(3)], 0.3, 9, smooth=2, r=0.3)
-    shell('strap', 'accent', 0.3, [rect(-3.7, -1.5, -12, 12)], -9, 9, smooth=2)
-    shell('tab', 'poly', 0.55, [rect(-4.0, -1.2, -1.6, 1.9)], 0.5, 9, smooth=2, r=0.45)
+                                       for i in range(3)], 0.3, 9, r=0.3, parts='pw')
+    shell('strap', 'accent', 0.3, [rect(-3.7, -1.5, -12, 12)], -9, 9, parts='wp')
+    shell('tab', 'poly', 0.55, [rect(-4.0, -1.2, -1.6, 1.9)], 0.5, 9, r=0.45, parts='wp')
     pin('snap', -2.6, 0.2, 2.2, 2.92, 0.42, 'steel', bevel=0.1)
-    shell('hem', 'rubber', 0.22, [rect(-9.3, -8.3, -12, 12)], -9, 9, smooth=2)
-    shell('cuff_panel', 'accent', 0.16, [[(-7.6, -2.2), (-5.0, -2.2), (-4.4, 2.2), (-7.6, 2.2)]], 0.5, 9, smooth=2, r=0.4)
+    shell('hem', 'rubber', 0.22, [rect(-9.3, -8.3, -12, 12)], -9, 9, parts='w')
+    shell('cuff_panel', 'paint', 0.16, [[(-7.6, -2.2), (-5.0, -2.2), (-4.4, 2.2), (-7.6, 2.2)]], 0.5, 9, r=0.4, parts='w')
+    freeze()
 
 
 # =============================================================================
@@ -343,16 +360,17 @@ def wraps():
     base_hand('accent')
     # wrist: overlapping near-vertical turns
     for i, (x, a, d) in enumerate([(-8.3, 84, 0.16), (-6.6, 97, 0.28), (-4.9, 83, 0.2), (-3.2, 98, 0.32), (-1.5, 84, 0.24)]):
-        shell('wrist%d' % i, 'paint', d, [slab(x, 0, a, 2.15)], -9, 9, smooth=2)
+        shell('wrist%d' % i, 'paint', d, [slab(x, 0, a, 2.15)], -9, 9, parts='wp')
     # back of the hand: crossing diagonals, then the knuckle turns
-    shell('diag_a', 'paint', 0.22, [slab(3.4, 0.6, 52, 2.3)], -9, 9, smooth=2)
-    shell('diag_b', 'paint', 0.36, [slab(3.9, -0.4, -50, 2.3)], -9, 9, smooth=2)
-    shell('diag_c', 'paint', 0.3, [slab(1.0, 0.0, 72, 2.0)], -9, 9, smooth=2)
-    shell('knuck_a', 'paint', 0.34, [slab(8.9, 0.0, 80, 2.2)], -9, 9, smooth=2)
-    shell('knuck_b', 'paint', 0.46, [slab(7.5, 0.0, 99, 2.1)], -9, 9, smooth=2)
-    shell('fingers', 'paint', 0.2, [fseg(f, 0.2, 0.43, 0.6) for f in FING], -9, 9, smooth=2)
-    shell('thumb', 'paint', 0.24, [fseg(THUMB, 0.05, 0.4, 0.7)], -9, 9, smooth=2)
+    shell('diag_a', 'paint', 0.22, [slab(3.4, 0.6, 52, 2.3)], -9, 9, parts='wpt')
+    shell('diag_b', 'paint', 0.36, [slab(3.9, -0.4, -50, 2.3)], -9, 9, parts='wpt')
+    shell('diag_c', 'paint', 0.3, [slab(1.0, 0.0, 72, 2.0)], -9, 9, parts='wpt')
+    shell('knuck_a', 'paint', 0.34, [slab(8.9, 0.0, 80, 2.2)], -9, 9, parts='pf')
+    shell('knuck_b', 'paint', 0.46, [slab(7.5, 0.0, 99, 2.1)], -9, 9, parts='pf')
+    shell('fingers', 'paint', 0.2, [fseg(f, 0.2, 0.43, 0.6) for f in FING], -9, 9, parts='f')
+    shell('thumb', 'paint', 0.24, [fseg(THUMB, 0.05, 0.4, 0.7)], -9, 9, parts='tp')
     shell('pad', 'rubber', 0.6, [[(9.7, 3.9), (10.9, 2.0), (11.2, 0.6), (10.8, -1.6), (9.6, -3.9), (8.6, -3.8), (9.2, 0.2), (8.8, 3.8)]],
-          0.4, 9, smooth=2, r=0.4)
-    shell('tab', 'poly', 0.5, [rect(-6.2, -3.6, -1.5, 1.6)], 0.6, 9, smooth=2, r=0.4)
+          0.4, 9, r=0.4, parts='pf')
+    shell('tab', 'poly', 0.5, [rect(-6.2, -3.6, -1.5, 1.6)], 0.6, 9, r=0.4, parts='w')
     pin('snap', -4.9, 0.05, 2.25, 2.95, 0.4, 'steel', bevel=0.1)
+    freeze()

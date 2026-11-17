@@ -326,7 +326,7 @@ export class Game {
         this.earn(earned);
         this.s.stats.passive += earned;
       }
-      return dt > 90 && earned > 0 ? { seconds: secs, earned } : null;
+      return dt > 300 && earned > 0 ? { seconds: secs, earned } : null;
     }
     const earned = inc * dt;
     if (earned > 0) {
