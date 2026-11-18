@@ -532,6 +532,7 @@ export interface UpgradeDef {
   icon: string;
 }
 
+/** How many crates can be opened in one go. Available to everyone from the start. */
 export const BULK_STEPS = [1, 2, 3, 5, 10];
 
 export const UPGRADES: UpgradeDef[] = [
@@ -564,11 +565,6 @@ export const UPGRADES: UpgradeDef[] = [
     id: 'supply', name: 'Supply Line', icon: 'chute', base: 80, growth: 1.8, max: 8,
     desc: 'Free supply drops arrive faster.',
     effect: (l) => `every ${90 - l * 8}s`,
-  },
-  {
-    id: 'bulk', name: 'Bulk Unpacking', icon: 'stack', base: 900, growth: 6, max: 4,
-    desc: 'Open several crates in one go.',
-    effect: (l) => `x${BULK_STEPS[l]} at once`,
   },
   {
     id: 'offline', name: 'Night Shift', icon: 'moon', base: 500, growth: 1.9, max: 11,

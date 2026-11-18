@@ -1,58 +1,116 @@
 // Crate Battles tab: the player and 1-3 rival operators open the same crates;
 // the best (or, in underdog mode, the worst) haul takes every item on the table.
-import { CRATES, CRATE_BY_ID } from '../data';
+import { CRATES, CRATE_BY_ID, SKINS } from '../data';
 import type { BattleResult } from '../game';
 import type { App, TabDef } from './app';
 import { tag } from './parts';
+import { cellUnderMarker, land, reelHtml, spin, type Spin } from './reel';
 import { cr, esc, fmt, wait } from './util';
+
+/** Battle reels are shorter than the crate-opening one: there is one per player, every round. */
+const REEL_CELLS = 32;
+const REEL_WIN = 27;
+let skipping = false;
 
 async function runBattle(app: App, res: BattleResult): Promise<void> {
   const seq = ++app.seq;
+  skipping = false;
   const crate = CRATE_BY_ID[res.crate];
   const fast = app.game.s.fast || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const P = res.names.length;
   const modal = app.openModal(`
     <div class="arena p${P}" style="--cc:${crate.paint[1]}">
-      <div class="unbox-head"><span class="crate-mark">${crate.mark}</span><b>${esc(crate.name)}</b><span>Round <i id="bt-round">1</i> of ${res.rounds}</span><span>${res.mode === 'high' ? 'Highest total wins' : 'Lowest total wins'}</span></div>
+      <div class="unbox-head"><span class="crate-mark">${crate.mark}</span><b>${esc(crate.name)}</b><span>Round <i id="bt-round">1</i> of ${res.rounds}</span><span>${res.mode === 'high' ? 'Highest total wins' : 'Lowest total wins'}</span>${fast ? '' : '<button class="btn ghost sm arena-skip" id="bt-skip" data-act="bt-skip">Skip</button>'}</div>
       <div class="lanes">${res.names.map((n, p) => `
         <div class="lane${p === 0 ? ' you' : ''}" data-p="${p}">
           <div class="lane-head"><b>${esc(n)}</b><span class="cr" id="bt-t${p}">0.00</span></div>
+          <div class="lane-reel"></div>
           <div class="lane-pulls"></div>
         </div>`).join('')}</div>
       <div class="arena-foot" id="bt-foot"></div>
     </div>`, { cls: 'full', locked: true, onClose: () => app.refresh() });
   const lanes = [...modal.querySelectorAll<HTMLElement>('.lane')];
+  const reels = lanes.map((l) => l.querySelector<HTMLElement>('.lane-reel')!);
   const totals = res.names.map(() => 0);
   const alive = (): boolean => modal.isConnected;
-  const hurry = (): boolean => fast || seq !== app.seq;
+  const hurry = (): boolean => fast || skipping || seq !== app.seq;
   const lead = (): void => {
     let best = 0;
     for (let p = 1; p < P; p++) if (res.mode === 'high' ? totals[p] > totals[best] : totals[p] < totals[best]) best = p;
     lanes.forEach((l, p) => l.classList.toggle('lead', p === best));
   };
-  await wait(hurry() ? 50 : 500);
+  /** Put a pull on a player's pile and update their total. */
+  const deal = (r: number, p: number, loud: boolean): void => {
+    const pull = res.pulls[r][p];
+    const holder = lanes[p].querySelector('.lane-pulls')!;
+    const wrap = document.createElement('div');
+    wrap.className = 'pull';
+    wrap.innerHTML = tag(app, { s: pull.s, w: pull.w, p: pull.p, sn: pull.sn }, { price: pull.value, noIncome: true });
+    holder.appendChild(wrap);
+    holder.scrollTop = holder.scrollHeight;
+    totals[p] += pull.value;
+    const t = modal.querySelector(`#bt-t${p}`);
+    if (t) t.textContent = fmt(totals[p]);
+    lead();
+    if (loud) {
+      app.sfx.stop();
+      app.sfx.cue(SKINS[pull.s].rarity);
+    }
+  };
+
+  await wait(hurry() ? 50 : 450);
+  // rivals stop first, the player last
+  const order = [...Array.from({ length: P - 1 }, (_, i) => i + 1), 0];
   for (let r = 0; r < res.rounds && alive(); r++) {
     const rn = modal.querySelector('#bt-round');
     if (rn) rn.textContent = String(r + 1);
-    for (let p = 0; p < P && alive(); p++) {
-      const pull = res.pulls[r][p];
-      const holder = lanes[p].querySelector('.lane-pulls')!;
-      const wrap = document.createElement('div');
-      wrap.className = 'pull';
-      wrap.innerHTML = tag(app, { s: pull.s, w: pull.w, p: pull.p, sn: pull.sn }, { price: pull.value, noIncome: true });
-      holder.appendChild(wrap);
-      holder.scrollTop = holder.scrollHeight;
-      totals[p] += pull.value;
-      const t = modal.querySelector(`#bt-t${p}`);
-      if (t) t.textContent = fmt(totals[p]);
-      app.sfx.tick(0.8 + p * 0.12);
-      lead();
-      await wait(hurry() ? 30 : 420);
+    const dealt = new Set<number>();
+    if (!hurry()) {
+      reels.forEach((el, p) => { el.innerHTML = reelHtml(app, crate, res.pulls[r][p].s, REEL_CELLS, REEL_WIN); });
+      app.sfx.latch();
+      await wait(60);
+      if (!alive()) return;
+      const spins: Spin[] = [];
+      order.forEach((p, k) => { spins[p] = spin(reels[p].querySelector<HTMLElement>('.strip-track')!, REEL_WIN, 2000 + k * 560); });
+      let lastIdx = -1;
+      const t0 = performance.now();
+      await new Promise<void>((resolve) => {
+        const loop = (): void => {
+          if (!alive() || hurry()) return resolve();
+          const elapsed = performance.now() - t0;
+          for (const p of order) {
+            if (spins[p].landed || elapsed < spins[p].dur) continue;
+            land(spins[p]);
+            dealt.add(p);
+            deal(r, p, true);
+          }
+          if (spins[0].landed) return resolve();
+          // the player's reel spins longest, so it drives the ticking
+          const idx = cellUnderMarker(spins[0]);
+          if (idx !== lastIdx) {
+            lastIdx = idx;
+            app.sfx.tick();
+          }
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      });
+      if (!alive()) return;
+      for (const p of order) if (spins[p] && !spins[p].landed) land(spins[p]);
     }
-    await wait(hurry() ? 40 : 520);
+    // anything not dealt yet (skipped, or the quick mode): drop it straight in
+    for (const p of order) {
+      if (dealt.has(p) || !alive()) continue;
+      deal(r, p, false);
+      app.sfx.tick(0.8 + p * 0.12);
+      await wait(fast && !skipping ? 110 : 25);
+    }
+    await wait(hurry() ? 60 : 700);
   }
   if (!alive()) return;
   delete modal.dataset.locked;
+  modal.querySelector('#bt-skip')?.remove();
+  for (const el of reels) el.innerHTML = '';
   lanes.forEach((l, p) => {
     l.classList.remove('lead');
     l.classList.add(p === res.winner ? 'winner' : 'loser');
@@ -134,5 +192,6 @@ export const battleTab: TabDef = {
     'bt-mode': (app, d) => { app.ui.battle.mode = d.m as 'high' | 'low'; app.sfx.click(); app.refresh(); },
     'bt-go': (app) => start(app),
     'bt-again': (app) => start(app),
+    'bt-skip': () => { skipping = true; },
   },
 };

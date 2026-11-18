@@ -5,10 +5,9 @@ import { specFor } from '../render';
 import * as sdk from '../sdk';
 import type { App, TabDef } from './app';
 import { itemFacts, rarityStamp, tag } from './parts';
+import { WIN_AT, cellUnderMarker, land, reelHtml, spin } from './reel';
 import { ICON, cr, esc, fmt, fmtRate, fmtTime, wait } from './util';
 
-const CELLS = 46;
-const WIN_AT = 40;
 let qty = 1;
 let lastSig = '';
 
@@ -59,9 +58,20 @@ function effectiveOdds(app: App, c: CrateDef): { r: number; pct: number }[] {
   return w.map((x, r) => ({ r, pct: (x / total) * 100 })).filter((o) => o.pct > 0);
 }
 
+function openLabel(c: CrateDef): string {
+  return qty > 1 ? `Open x${qty} for ${fmt(c.price * qty)}` : `Open for ${fmt(c.price)}`;
+}
+
+/** Why the chosen number of crates cannot be opened right now ('' when it can). */
+function openWhy(app: App, c: CrateDef): string {
+  const g = app.game;
+  if (g.free < qty) return g.free <= 0 ? 'Armory full: sell items or add racks first' : `Only ${g.free} free rack${g.free === 1 ? '' : 's'} in the Armory`;
+  if (g.s.cash < c.price * qty) return `You need ${fmt(c.price * qty - g.s.cash)} more credits`;
+  return '';
+}
+
 function openCrateSheet(app: App, c: CrateDef): void {
   const g = app.game;
-  qty = Math.min(qty, g.bulkMax);
   const skins = [...c.skins].sort((a, b) => b.rarity - a.rarity || b.base - a.base);
   const found = new Set(g.s.found);
   const m = app.openModal(`
@@ -83,24 +93,16 @@ function openCrateSheet(app: App, c: CrateDef): void {
           <span><b>${esc(WEAPONS[s.weapon].name)}</b>${esc(s.name)}</span>
         </button>`).join('')}</div>
       <div class="openbar">
-        <div class="qty" role="group" aria-label="How many to open">${BULK_STEPS.map((n) => `<button class="chip${n === qty ? ' on' : ''}" data-act="qty" data-n="${n}" ${n > g.bulkMax ? 'disabled title="Upgrade Bulk Unpacking at HQ"' : ''}>x${n}</button>`).join('')}</div>
+        <div class="qty" role="group" aria-label="How many to open">${BULK_STEPS.map((n) => `<button class="chip${n === qty ? ' on' : ''}" data-act="qty" data-n="${n}">x${n}</button>`).join('')}</div>
         <label class="check"><input type="checkbox" data-input="fast" ${g.s.fast ? 'checked' : ''}> Skip the spin</label>
-        <button class="btn big" id="open-btn" data-act="open" data-crate="${c.id}">Open for ${fmt(c.price * qty)}</button>
+        <button class="btn big" id="open-btn" data-act="open" data-crate="${c.id}">${openLabel(c)}</button>
+        <span class="open-why" id="open-why">${openWhy(app, c)}</span>
       </div>
     </div>`, { cls: 'center' });
   app.mountLive(m.querySelector<HTMLCanvasElement>('#crate-cv')!, app.crateSpec(c));
 }
 
 // ------------------------------------------------------------ opening sequence
-
-function stripHtml(app: App, crate: CrateDef, won: Item, i: number): string {
-  let cells = '';
-  for (let k = 0; k < CELLS; k++) {
-    const s = k === WIN_AT ? SKINS[won.s] : SKINS[app.game.sample(crate, 0, 0).s];
-    cells += `<div class="cell r${s.rarity}${k === WIN_AT ? ' target' : ''}">${app.imgSkin(s, 'cell-img')}</div>`;
-  }
-  return `<div class="strip" data-i="${i}"><div class="strip-track">${cells}</div><i class="strip-mark"></i></div>`;
-}
 
 function revealHtml(app: App, s: Session): string {
   const g = app.game;
@@ -168,7 +170,7 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
   const modal = app.openModal(`
     <div class="unbox" style="--sh:${sh}px;--cc:${crate.paint[1]}">
       <div class="unbox-head"><span class="crate-mark">${crate.mark}</span><b>${esc(crate.name)}</b>${n > 1 ? `<span>x${n}</span>` : ''}${free ? '<span>Free drop</span>' : ''}</div>
-      <div class="strips">${fast ? '' : items.map((it, i) => stripHtml(app, crate, it, i)).join('')}</div>
+      <div class="strips">${fast ? '' : items.map((it) => reelHtml(app, crate, it.s)).join('')}</div>
       <button class="btn ghost sm" data-act="unbox-skip">Skip</button>
     </div>`, { cls: 'full', locked: true, onClose: () => { if (cur && cur.modal === modal) cur = null; app.refresh(); } });
   const s: Session = { crate, items, n, free, modal, marked: new Set(), skip: false };
@@ -176,34 +178,24 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
   if (!fast) {
     app.sfx.crateOpen();
     await wait(60);
-    const tracks = [...modal.querySelectorAll<HTMLElement>('.strip-track')];
-    const finals: number[] = [];
-    let longest = 0;
-    tracks.forEach((tr, i) => {
-      const strip = tr.parentElement!;
-      const a = tr.children[0] as HTMLElement;
-      const b = tr.children[1] as HTMLElement;
-      const pitch = b.offsetLeft - a.offsetLeft;
-      const target = WIN_AT * pitch + pitch * (0.14 + Math.random() * 0.72) - strip.clientWidth / 2;
-      const dur = 4200 + i * 360;
-      longest = Math.max(longest, dur);
-      finals.push(-target);
-      tr.style.transition = `transform ${dur}ms cubic-bezier(0.07, 0.74, 0.1, 1)`;
-      tr.style.transform = `translate3d(${-target}px,0,0)`;
-    });
-    // tick as cells pass the marker on the first strip
-    const first = tracks[0];
-    const pitch0 = (first.children[1] as HTMLElement).offsetLeft - (first.children[0] as HTMLElement).offsetLeft;
-    const half = first.parentElement!.clientWidth / 2;
+    // strips stop one after another; each landing gets a thud and, when several are open, its rarity cue
+    const spins = [...modal.querySelectorAll<HTMLElement>('.strip-track')].map((tr, i) => spin(tr, WIN_AT, 4200 + i * 360));
+    const last = spins[spins.length - 1];
     let lastIdx = -1;
     const t0 = performance.now();
     await new Promise<void>((resolve) => {
       const loop = (): void => {
-        if (seq !== app.seq || !modal.isConnected) return resolve();
+        if (seq !== app.seq || !modal.isConnected || s.skip) return resolve();
         const elapsed = performance.now() - t0;
-        if (s.skip || elapsed > longest + 60) return resolve();
-        const x = new DOMMatrixReadOnly(getComputedStyle(first).transform).m41;
-        const idx = Math.floor((-x + half) / pitch0);
+        spins.forEach((sp, i) => {
+          if (sp.landed || elapsed < sp.dur) return;
+          land(sp);
+          app.sfx.stop();
+          if (n > 1) app.sfx.cue(SKINS[items[i].s].rarity);
+        });
+        if (last.landed) return resolve();
+        // tick as cells pass the marker on the strip that spins longest
+        const idx = cellUnderMarker(last);
         if (idx !== lastIdx) {
           lastIdx = idx;
           app.sfx.tick();
@@ -217,13 +209,11 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
       if (modal.isConnected) showResults(app, s);
       return;
     }
-    tracks.forEach((tr, i) => {
-      tr.style.transition = 'none';
-      tr.style.transform = `translate3d(${finals[i]}px,0,0)`;
-      tr.querySelector('.target')?.classList.add('won');
-    });
-    app.sfx.stop();
-    await wait(s.skip ? 120 : 520);
+    if (spins.some((sp) => !sp.landed)) {
+      for (const sp of spins) if (!sp.landed) land(sp);
+      app.sfx.stop();
+    }
+    await wait(s.skip ? 120 : 560);
     if (!modal.isConnected) return;
   }
   showResults(app, s);
@@ -282,7 +272,9 @@ export const cratesTab: TabDef = {
       const sheet = el.closest('.sheet')!;
       for (const b of sheet.querySelectorAll<HTMLElement>('.qty .chip')) b.classList.toggle('on', Number(b.dataset.n) === qty);
       const btn = sheet.querySelector<HTMLElement>('#open-btn')!;
-      btn.textContent = `Open for ${fmt(CRATE_BY_ID[btn.dataset.crate!].price * qty)}`;
+      const crate = CRATE_BY_ID[btn.dataset.crate!];
+      btn.textContent = openLabel(crate);
+      sheet.querySelector<HTMLElement>('#open-why')!.textContent = openWhy(app, crate);
     },
     open: (app, d) => startOpen(app, CRATE_BY_ID[d.crate!], qty),
     'free-drop': (app) => {

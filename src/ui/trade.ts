@@ -79,7 +79,7 @@ async function runContract(app: App, res: TradeResult): Promise<void> {
     const it = res.item;
     const skin = SKINS[it.s];
     const value = valueOf(it, app.tick());
-    app.sfx.reveal(Math.max(3, skin.rarity));
+    app.sfx.reveal(skin.rarity);
     box.innerHTML = `<div class="reveal r${skin.rarity}">
         <div class="rv-bg" aria-hidden="true" style="background-image:url(bg/armory.webp)"></div>
         <div class="stage stage-rv"><canvas class="live" id="rv-cv"></canvas><span class="stage-hint">Drag to turn it</span></div>

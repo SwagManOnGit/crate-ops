@@ -99,7 +99,7 @@ export class Sfx {
   }
 
   /** Oscillator with a percussive envelope; optional pitch glide. */
-  private tone(freq: number, dur: number, type: OscType, vol: number, o: Voice & { to?: number; attack?: number } = {}): void {
+  private tone(freq: number, dur: number, type: OscType, vol: number, o: Voice & { to?: number; attack?: number; lp?: number } = {}): void {
     const c = this.live();
     if (!c) return;
     const t = c.currentTime + (o.at || 0);
@@ -111,10 +111,33 @@ export class Sfx {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + (o.attack || 0.004));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(g);
+    if (o.lp) {
+      const f = c.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = o.lp;
+      osc.connect(f);
+      f.connect(g);
+    } else {
+      osc.connect(g);
+    }
     this.out(g, o.wet);
     osc.start(t);
     osc.stop(t + dur + 0.03);
+  }
+
+  /** Brass-like voice: two detuned saws and a sub, rounded off by a low-pass. */
+  private brass(freq: number, dur: number, vol: number, o: Voice = {}): void {
+    const lp = Math.min(5200, freq * 5);
+    this.tone(freq, dur, 'sawtooth', vol, { ...o, attack: 0.04, lp });
+    this.tone(freq * 1.005, dur, 'sawtooth', vol * 0.8, { ...o, attack: 0.05, lp });
+    this.tone(freq / 2, dur, 'square', vol * 0.35, { ...o, attack: 0.05, lp: 900 });
+  }
+
+  /** Lead-in shared by the reveal stings: air rushing in, then a hit. `weight` 0..1 scales it. */
+  private impact(weight: number, at = 0.16): void {
+    this.noise(at + 0.05, 0.1 + weight * 0.12, 2600, { q: 0.8, to: 500, attack: at * 0.9, wet: 0.2 });
+    this.tone(84 - weight * 20, 0.35 + weight * 0.6, 'sine', 0.28 + weight * 0.34, { at, to: 34 });
+    this.noise(0.09, 0.2 + weight * 0.2, 900, { type: 'lowpass', at });
   }
 
   /** Filtered noise burst; the filter can sweep. */
@@ -199,38 +222,100 @@ export class Sfx {
     this.noise(0.02, 0.22, 4200, { q: 3, at: 0.06 });
   }
 
-  /** Reveal sting: every tier adds weight, notes and tail. */
+  /**
+   * Reveal sting. Every rarity has its own sound, so the ear knows what dropped before the eye does:
+   * 0 Surplus    a dull clunk
+   * 1 Service    a soft two-note chime
+   * 2 Tactical   crisp radio blips up to a clean bell
+   * 3 Elite      a minor-ninth bell arpeggio over a pad
+   * 4 Prototype  a charged riser snapping into a bright synth stab
+   * 5 Apex       a deep hit and a brass call that swells into a held chord
+   * 6 Exotic     the jackpot: harp run, full chord, brass pad and a long glitter tail
+   */
   reveal(tier: number): void {
-    tier = Math.min(6, Math.max(0, tier));
-    const root = [196, 220, 233.1, 261.6, 293.7, 329.6, 392][tier];
-    // air rushing in, then the hit
-    this.noise(0.22, 0.14 + tier * 0.02, 2600, { q: 0.8, to: 500, attack: 0.16, wet: 0.2 });
-    this.tone(78, 0.5 + tier * 0.06, 'sine', 0.34 + tier * 0.05, { at: 0.16, to: 36 });
-    this.noise(0.09, 0.3, 900, { type: 'lowpass', at: 0.16 });
-    const wet = 0.25 + tier * 0.09;
-    const chords: number[][] = [
-      [1],
-      [1, 1.5],
-      [1, 1.25, 1.5],
-      [1, 1.25, 1.5, 2],
-      [1, 1.26, 1.5, 2, 2.52],
-      [1, 1.26, 1.5, 1.89, 2, 2.52, 3],
-      [1, 1.26, 1.5, 1.89, 2.25, 2.52, 3, 3.78, 4],
-    ];
-    const notes = chords[tier];
-    const gap = tier >= 5 ? 0.07 : 0.05;
-    notes.forEach((m, i) => this.bell(root * m, 0.9 + tier * 0.28, 0.17 - i * 0.008, { at: 0.17 + i * gap, wet }));
-    if (tier >= 3) {
-      // a held pad under the bells
-      for (const m of [0.5, 1, 1.5]) this.tone(root * m, 1.1 + tier * 0.25, 'sawtooth', 0.022, { at: 0.17, attack: 0.25, wet: 0.5 });
-    }
-    if (tier >= 4) this.noise(1.3 + tier * 0.2, 0.05, 7000, { type: 'highpass', at: 0.2, attack: 0.3, wet: 0.6 });
-    if (tier >= 5) {
-      // glitter: quick high bells scattered over the tail
-      for (let i = 0; i < 6 + (tier - 5) * 6; i++) {
-        this.bell(root * [4, 5.04, 6, 7.56, 8][i % 5], 0.5, 0.035, { at: 0.5 + i * 0.09 + Math.random() * 0.04, wet: 0.7 });
+    switch (Math.min(6, Math.max(0, Math.round(tier)))) {
+      case 0:
+        this.noise(0.12, 0.4, 650, { type: 'lowpass' });
+        this.tone(150, 0.2, 'sine', 0.36, { to: 70 });
+        this.tone(196, 0.3, 'triangle', 0.1, { at: 0.03 });
+        break;
+      case 1:
+        this.impact(0.1);
+        this.bell(392, 0.55, 0.14, { at: 0.17, wet: 0.25 });
+        this.bell(493.9, 0.7, 0.13, { at: 0.27, wet: 0.3 });
+        break;
+      case 2:
+        this.impact(0.25);
+        [523.3, 659.3, 784].forEach((f, i) => this.tone(f, 0.075, 'square', 0.06, { at: 0.17 + i * 0.075, lp: 2600 }));
+        this.bell(1046.5, 0.9, 0.15, { at: 0.4, wet: 0.35 });
+        this.bell(784, 0.9, 0.08, { at: 0.4, wet: 0.35 });
+        break;
+      case 3:
+        this.impact(0.4);
+        [440, 523.3, 659.3, 987.8].forEach((f, i) => this.bell(f, 1.3, 0.15 - i * 0.01, { at: 0.17 + i * 0.07, wet: 0.5 }));
+        for (const f of [220, 329.6]) this.tone(f, 1.6, 'sawtooth', 0.03, { at: 0.17, attack: 0.3, lp: 1400, wet: 0.5 });
+        break;
+      case 4:
+        this.tone(180, 0.3, 'sawtooth', 0.07, { to: 720, attack: 0.2, lp: 3000 });
+        this.impact(0.6, 0.3);
+        for (const f of [329.6, 415.3, 493.9, 659.3]) {
+          this.tone(f, 0.9, 'sawtooth', 0.045, { at: 0.3, attack: 0.01, lp: 3800, wet: 0.5 });
+          this.tone(f * 1.006, 0.9, 'sawtooth', 0.045, { at: 0.3, attack: 0.01, lp: 3800 });
+        }
+        this.bell(1318.5, 1.2, 0.1, { at: 0.3, wet: 0.6 });
+        this.noise(1.3, 0.05, 7000, { type: 'highpass', at: 0.3, attack: 0.05, wet: 0.6 });
+        [1975.5, 2637].forEach((f, i) => this.bell(f, 0.6, 0.05, { at: 0.62 + i * 0.14, wet: 0.7 }));
+        break;
+      case 5:
+        this.impact(0.9, 0.28);
+        [293.7, 440, 587.3].forEach((f, i) => this.brass(f, 0.26, 0.11, { at: 0.3 + i * 0.17, wet: 0.45 }));
+        for (const f of [293.7, 370, 440, 587.3, 740]) this.brass(f, 1.8, 0.06, { at: 0.82, wet: 0.6 });
+        this.noise(1.8, 0.09, 6000, { type: 'highpass', at: 0.82, attack: 0.5, wet: 0.7 });
+        for (let i = 0; i < 6; i++) this.bell([1174.7, 1480, 1760, 2349.3][i % 4], 0.5, 0.04, { at: 1.0 + i * 0.11, wet: 0.7 });
+        break;
+      default: {
+        this.impact(1, 0.36);
+        const run = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5, 1568, 1760, 2093, 2349.3, 2637];
+        run.forEach((f, i) => this.bell(f, 0.9, 0.085, { at: 0.38 + i * 0.042, wet: 0.6 }));
+        const t = 0.38 + run.length * 0.042 + 0.02;
+        for (const f of [261.6, 329.6, 392, 523.3, 659.3, 784]) this.bell(f, 2.6, 0.12, { at: t, wet: 0.7 });
+        for (const f of [130.8, 196, 261.6, 392]) this.brass(f, 2.4, 0.045, { at: t, wet: 0.7 });
+        this.tone(65.4, 1.4, 'sine', 0.4, { at: t, to: 40 });
+        this.noise(2.6, 0.08, 7500, { type: 'highpass', at: t, attack: 0.4, wet: 0.8 });
+        for (let i = 0; i < 16; i++) {
+          this.bell([2093, 2637, 3136, 3951, 4186][Math.floor(Math.random() * 5)], 0.45, 0.035, { at: t + 0.15 + i * 0.1 + Math.random() * 0.05, wet: 0.8 });
+        }
       }
-      this.tone(root / 2, 2.0, 'sawtooth', 0.05, { at: 0.17, attack: 0.5, wet: 0.5 });
+    }
+  }
+
+  /** Short rarity cue for quick reveals (crate battles): the opening beat of each sting. */
+  cue(tier: number): void {
+    switch (Math.min(6, Math.max(0, Math.round(tier)))) {
+      case 0:
+        this.tone(180, 0.09, 'triangle', 0.12, { to: 120 });
+        break;
+      case 1:
+        this.bell(392, 0.3, 0.1, { wet: 0.15 });
+        break;
+      case 2:
+        [523.3, 784].forEach((f, i) => this.tone(f, 0.07, 'square', 0.055, { at: i * 0.07, lp: 2600 }));
+        break;
+      case 3:
+        [440, 659.3].forEach((f, i) => this.bell(f, 0.5, 0.11, { at: i * 0.07, wet: 0.35 }));
+        break;
+      case 4:
+        for (const f of [329.6, 493.9, 659.3]) this.tone(f, 0.4, 'sawtooth', 0.045, { attack: 0.01, lp: 3800, wet: 0.4 });
+        this.bell(1318.5, 0.6, 0.08, { wet: 0.5 });
+        break;
+      case 5:
+        this.tone(70, 0.4, 'sine', 0.4, { to: 36 });
+        [293.7, 440, 587.3].forEach((f, i) => this.brass(f, 0.2 + (i === 2 ? 0.5 : 0), 0.09, { at: i * 0.11, wet: 0.5 }));
+        break;
+      default:
+        this.tone(65.4, 0.6, 'sine', 0.4, { to: 40 });
+        [523.3, 659.3, 784, 1046.5, 1318.5, 1568].forEach((f, i) => this.bell(f, 0.8, 0.08, { at: i * 0.045, wet: 0.6 }));
+        for (const f of [261.6, 392, 523.3]) this.bell(f, 1.4, 0.1, { at: 0.3, wet: 0.7 });
     }
   }
 

@@ -1,6 +1,6 @@
 // Game rules and state. No DOM in here, so the balance script can run it headless.
 import {
-  BULK_STEPS, CRATES, CRATE_BY_ID, EXOTIC, RARITIES, SKINS, SKIN_LIST, UPGRADE_BY_ID, WEARS,
+  CRATES, CRATE_BY_ID, EXOTIC, RARITIES, SKINS, SKIN_LIST, UPGRADE_BY_ID, WEARS,
   rankName, wearIndex, wearValue, xpForRank, type CrateDef, type SkinDef,
 } from './data';
 import { priceAt, tickOf, type Listing } from './market';
@@ -220,6 +220,11 @@ export function parseSave(raw: string | null | undefined, now: number): Save {
     s.bought = Array.isArray(d.bought) ? d.bought : [];
     s.nextId = Math.max(s.nextId || 1, ...s.items.map((it) => it.id + 1), 1);
     s.rank = Math.max(1, Math.floor(s.rank || 1));
+    // Opening several crates at once used to be the "Bulk Unpacking" upgrade. It is free for
+    // everyone now, so anyone who paid for it gets their credits back.
+    const bulk = Math.min(4, Math.floor(s.up.bulk || 0));
+    for (let i = 0; i < bulk; i++) s.cash += [900, 5400, 32000, 190000][i];
+    delete s.up.bulk;
     s.v = SAVE_VERSION;
     if (!Number.isFinite(s.cash) || s.cash < 0) s.cash = 0;
     return s;
@@ -259,9 +264,6 @@ export class Game {
   }
   get freeCooldown(): number {
     return (90 - 8 * this.lvl('supply')) * 1000;
-  }
-  get bulkMax(): number {
-    return BULK_STEPS[this.lvl('bulk')];
   }
   get offlineCap(): number {
     return (1 + this.lvl('offline')) * 3600;

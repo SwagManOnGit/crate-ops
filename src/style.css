@@ -310,6 +310,8 @@ button.tag:hover { background: linear-gradient(180deg, #333c38, var(--panel2)); 
 .openbar { position: sticky; bottom: -18px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 16px -18px -18px; padding: 12px 18px; background: var(--bg2); border-top: 1px solid var(--line2); }
 .qty { display: flex; gap: 5px; }
 .openbar .btn { flex: 1 1 200px; }
+.open-why { flex-basis: 100%; text-align: right; color: var(--tracer); font-size: 13px; min-height: 0; }
+.open-why:empty { display: none; }
 
 /* ---------------------------------------------------------------- opening */
 .unbox, .contract { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 18px 0; }
@@ -438,6 +440,12 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 28px; border-radius
 .lane-pulls { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 6px; scrollbar-width: none; }
 .pull { animation: drop 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.25); }
 @keyframes drop { from { transform: translateY(-16px) scale(0.92); opacity: 0; } }
+.lane-reel { border-bottom: 1px solid var(--line); }
+.lane-reel:empty { display: none; }
+.arena .strip { --sh: 62px; border: 0; }
+.arena.p3 .strip { --sh: 54px; }
+.arena.p4 .strip { --sh: 46px; }
+.arena-skip { margin-left: auto; }
 .arena.p4 .tag { padding: 5px 5px 6px 9px; }
 .arena.p4 .tag-name b { display: none; }
 .arena-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; min-height: 20px; }
@@ -486,6 +494,11 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 28px; border-radius
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px); } }
 
 /* ---------------------------------------------------------------- responsive */
+@media (min-width: 860px) {
+  .arena .strip { --sh: 104px; }
+  .arena.p3 .strip { --sh: 90px; }
+  .arena.p4 .strip { --sh: 76px; }
+}
 @media (max-width: 720px) {
   .trade { grid-template-columns: minmax(0, 1fr); }
   .crate-top { grid-template-columns: minmax(0, 1fr); }

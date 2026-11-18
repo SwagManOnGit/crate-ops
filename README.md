@@ -26,7 +26,7 @@ In dev builds `window.__co` exposes `{ app, game, renderer }` for console testin
 
 | Feature | Notes |
 |---|---|
-| Crates | 8 crates, 131 skins across 10 firearms, 4 blades and 2 glove sets. Roulette opening, x2 to x10 bulk opening, free supply drops on a timer. |
+| Crates | 8 crates, 131 skins across 10 firearms, 4 blades and 2 glove sets. Roulette opening, x2 to x10 opening for everyone, free supply drops on a timer. Each rarity has its own reveal sound. |
 | Rarity | Surplus, Service, Tactical, Elite, Prototype, Apex, Exotic (blades and gloves). |
 | Wear float | 0 to 1: Pristine, Clean, Serviced, Battered, Scrap. The paint really chips: edges first, then the flats. |
 | Pattern float | Index 000 to 999 decides offset, rotation and scale of the finish, plus the wear seed, so no two drops look the same. Choice (8.5%) and Prime (1.5%) patterns are worth more. |
@@ -34,8 +34,8 @@ In dev builds `window.__co` exposes `{ app, game, renderer }` for console testin
 | Passive income | Every kept item earns credits per second from its rarity, condition, pattern and serial. Rare, clean items pay back in minutes; common scrap takes hours, so it is better sold. |
 | Exchange | Prices are a deterministic function of (skin, time): they move every 4 s, keep moving while you are away, and the full history (day to year) can be charted. News events move weapon classes and crate collections. Rotating buy listings, instant selling with a fee. |
 | Trade-Up | Put up to 10 items in, pick the risk with a slider (x1.15 at 80% up to x40 at 2.3%). Success forges an item worth the target value; failure destroys the inputs. |
-| Crate Battles | You against 1 to 3 bots over 1 to 5 rounds, highest (or lowest) total takes every item. |
-| Progression | Ranks unlock crates and features, 28 directives, 8 upgrade tracks with exponential costs, a catalog bonus, and Redeploy (prestige) for permanent Medals with a small vault that survives it. |
+| Crate Battles | You against 1 to 3 bots over 1 to 5 rounds, highest (or lowest) total takes every item. Every player gets a roulette spin each round; rivals stop first, you last. |
+| Progression | Ranks unlock crates and features, 28 directives, 7 upgrade tracks with exponential costs, a catalog bonus, and Redeploy (prestige) for permanent Medals with a small vault that survives it. |
 | Rewarded ads | Sponsored crate, double income for 5 minutes, double away earnings. Outside YouTube a placeholder countdown stands in. |
 
 ## How the renders work
