@@ -16,6 +16,8 @@ npm run build      # type-check + production build into dist/
 npm run bundle     # build + crate-ops-playable.zip for the Playables Developer Portal
 npm run balance    # headless bot: how fast does a player progress?  (npm run balance -- 30 6 = one crate / 30 s, 6 h)
 npm run bake       # re-render the weapon sprites with Blender (needs Blender 4.2+ and ffmpeg)
+npm run meshes     # re-export the real-time 3D meshes from the same Blender models
+npm run armory     # re-render the armory backdrop and its depth map
 ```
 
 In dev builds `window.__co` exposes `{ app, game, renderer }` for console testing.
@@ -46,8 +48,14 @@ an edge-curvature map, packed into one greyscale WebP atlas (`public/weapons/<id
 
 At runtime `src/render.ts` composites that sprite in a WebGL shader: it projects the procedural pattern
 tile from `src/patterns.ts` using the drop's pattern index, removes paint according to the wear float,
-and relights the result with a studio environment. The inspect view moves the key light with the
-pointer. Thumbnails are rendered once and cached as data URLs.
+and relights the result with a studio environment. Thumbnails are rendered once and cached as data URLs.
+
+When an item is unboxed or inspected it is shown as a real 3D model instead: `art/export_meshes.py`
+writes a compact mesh per weapon (`public/models/<id>.bin`, 70 to 350 KB), drawn by the same WebGL
+context with the same material code. The mesh stores the sprite's bake camera, so pattern, wear and AO
+are projected exactly as in the thumbnail. It spins slowly; drag to turn it, scroll to zoom. Behind it
+sits a Cycles render of an armory (`art/armory.py`, `public/bg/`) with a depth map that drives a
+parallax shift, so the room has depth as the pointer moves.
 
 ## Layout of the code
 

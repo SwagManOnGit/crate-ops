@@ -202,7 +202,7 @@ function openSkin(app: App, skin: SkinDef): void {
       ${news.length ? `<h3>Recent news touching this skin</h3><ul class="wire">${news.map((n) => `<li><span class="wire-d">Day ${(n.day - DAY0).toLocaleString('en-US')}</span><span class="wire-t">${esc(n.headline)}</span><span class="${n.move >= 0 ? 'up' : 'down'}">${fmtPct(n.move * 100, 0)}</span></li>`).join('')}</ul>` : ''}
     </div>`, { cls: 'center', onClose: () => { if (skinOpen?.modal === modal) skinOpen = null; } });
   skinOpen = { skin, modal, range: 0 };
-  app.mountLive(modal.querySelector<HTMLCanvasElement>('#sk-cv')!, specForSkin(skin));
+  app.mountLive(modal.querySelector<HTMLCanvasElement>('#sk-cv')!, specForSkin(skin), { bg: true, tint: RARITIES[skin.rarity].color });
   drawSkinChart(app);
 }
 
@@ -227,7 +227,7 @@ function openListing(app: App, l: Listing): void {
         <button class="btn ghost" data-act="skin" data-skin="${l.skin.id}">Price history</button>
       </div>
     </div>`, { cls: 'center' });
-  app.mountLive(m.querySelector<HTMLCanvasElement>('#ls-cv')!, { weapon: l.skin.weapon, skin: l.skin, wear: l.wear, pattern: l.pattern });
+  app.mountLive(m.querySelector<HTMLCanvasElement>('#ls-cv')!, { weapon: l.skin.weapon, skin: l.skin, wear: l.wear, pattern: l.pattern }, { bg: true, tint: RARITIES[l.skin.rarity].color });
 }
 
 export const marketTab: TabDef = {

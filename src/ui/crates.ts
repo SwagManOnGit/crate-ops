@@ -109,8 +109,8 @@ function revealHtml(app: App, s: Session): string {
   const value = valueOf(it, app.tick());
   const again = s.free ? '' : `<button class="btn ghost" data-act="rv-again">Open another · ${fmt(s.crate.price)}</button>`;
   return `<div class="reveal r${skin.rarity}">
-      <div class="rays" aria-hidden="true"></div>
-      <div class="stage stage-rv"><canvas class="live" id="rv-cv"></canvas></div>
+      <div class="rv-bg" aria-hidden="true" style="background-image:url(bg/armory.webp)"></div>
+      <div class="stage stage-rv"><canvas class="live" id="rv-cv"></canvas><span class="stage-hint">Drag to turn it</span></div>
       <div class="rv-info">
         ${rarityStamp(skin.rarity)}
         <h2><small>${esc(WEAPONS[skin.weapon].name)}</small>${esc(skin.name)}</h2>
@@ -153,7 +153,7 @@ function showResults(app: App, s: Session): void {
   if (s.items.length === 1) {
     box.innerHTML = revealHtml(app, s);
     const it = s.items[0];
-    app.mountLive(box.querySelector<HTMLCanvasElement>('#rv-cv')!, specFor(it, patternGrade(SKINS[it.s], it.p) === 2));
+    app.mountLive(box.querySelector<HTMLCanvasElement>('#rv-cv')!, specFor(it, patternGrade(SKINS[it.s], it.p) === 2), { bg: true, tint: RARITIES[SKINS[it.s].rarity].color });
   } else {
     box.innerHTML = summaryHtml(app, s);
   }
@@ -174,7 +174,7 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
   const s: Session = { crate, items, n, free, modal, marked: new Set(), skip: false };
   cur = s;
   if (!fast) {
-    app.sfx.latch();
+    app.sfx.crateOpen();
     await wait(60);
     const tracks = [...modal.querySelectorAll<HTMLElement>('.strip-track')];
     const finals: number[] = [];
@@ -206,7 +206,7 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
         const idx = Math.floor((-x + half) / pitch0);
         if (idx !== lastIdx) {
           lastIdx = idx;
-          app.sfx.tick(0.85 + Math.min(1, elapsed / longest) * 0.3);
+          app.sfx.tick();
         }
         requestAnimationFrame(loop);
       };
@@ -222,7 +222,7 @@ async function runOpening(app: App, crate: CrateDef, items: Item[], free: boolea
       tr.style.transform = `translate3d(${finals[i]}px,0,0)`;
       tr.querySelector('.target')?.classList.add('won');
     });
-    app.sfx.latch();
+    app.sfx.stop();
     await wait(s.skip ? 120 : 520);
     if (!modal.isConnected) return;
   }

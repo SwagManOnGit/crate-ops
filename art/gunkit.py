@@ -17,6 +17,12 @@ _parts = []
 _cutters = []
 MATS = {}
 PREVIEWS = {}
+# Level of detail: 1.0 for the sprite bakes, lower for the real-time meshes (fewer arc / bevel segments).
+LOD = 1.0
+# Filled by _fit_camera(): the orthographic bake camera, so the 3D view can project the
+# sprite's pattern, AO and wear onto the mesh exactly as the baked sprite shows them.
+LAST_CAM = {}
+TAG_ID = {'paint': 0, 'accent': 1, 'poly': 2, 'rubber': 3, 'steel': 4, 'bright': 5}
 
 # mask pass colours: R = pattern paint, G = accent paint, B = bare material brightness
 TAG_COL = {
@@ -167,7 +173,7 @@ def fillet(pts, r=0.0, seg=5):
             da -= 2 * math.pi
         while da < -math.pi:
             da += 2 * math.pi
-        steps = max(2, int(seg * abs(da) / (math.pi / 2) + 0.5))
+        steps = max(2, int(seg * LOD * abs(da) / (math.pi / 2) + 0.5))
         for k in range(steps + 1):
             a = a1 + da * k / steps
             out.append((c.x + rr * math.cos(a), c.y + rr * math.sin(a)))
@@ -176,6 +182,7 @@ def fillet(pts, r=0.0, seg=5):
 
 def arc(cx, cy, r, a0, a1, n=12):
     """Points on a circle arc; angles in degrees."""
+    n = max(3, int(round(n * LOD)))
     return [(cx + r * math.cos(math.radians(a0 + (a1 - a0) * k / n)),
              cy + r * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
 
@@ -247,7 +254,7 @@ class B:
         return self
 
     def _cone(self, r1, r2, depth, seg, mat, loc):
-        ret = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=seg,
+        ret = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=max(8, int(round(seg * LOD))),
                                     radius1=r1, radius2=r2, depth=depth)
         vs = ret['verts']
         bmesh.ops.rotate(self.bm, cent=(0, 0, 0), matrix=mat, verts=vs)
@@ -270,6 +277,7 @@ class B:
                           Matrix.Identity(3), V(x, (y0 + y1) / 2, z))
 
     def ball(self, x, y, z, r, sx=1.0, sy=1.0, sz=1.0, seg=24):
+        seg = max(8, int(round(seg * LOD)))
         ret = bmesh.ops.create_uvsphere(self.bm, u_segments=seg, v_segments=seg // 2, radius=r)
         vs = ret['verts']
         bmesh.ops.scale(self.bm, vec=(sx, sz, sy), verts=vs)
@@ -382,13 +390,13 @@ def finalize():
         if bev > 0:
             m = ob.modifiers.new('Bevel', 'BEVEL')
             m.width = bev
-            m.segments = int(ob.get('seg', 3))
+            m.segments = max(1, int(round(int(ob.get('seg', 3)) * LOD)))
             m.limit_method = 'ANGLE'
             m.angle_limit = math.radians(ob.get('angle', 30.0))
             m.miter_outer = 'MITER_ARC'
         w = ob.modifiers.new('WN', 'WEIGHTED_NORMAL')
         w.keep_sharp = True
-        w.weight = 60
+        w.weight = 60 if LOD >= 1.0 else 100   # real-time meshes: keep big flats perfectly flat
     bpy.context.view_layer.update()
 
 
@@ -428,6 +436,8 @@ def _fit_camera(yaw, pitch, margin=1.07, roll=0.0):
     cam.rotation_quaternion = q
     cam.location = right * cx + up * cyy + d * (max(ds) + 200)
     sc.camera = cam
+    LAST_CAM.clear()
+    LAST_CAM.update(right=tuple(right), up=tuple(up), d=tuple(d), cx=cx, cy=cyy, scale=cam_data.ortho_scale)
     return cam
 
 
@@ -589,3 +599,99 @@ def bake(wid, out_dir, tmp_dir, yaw=14.0, pitch=11.0, ao_dist=5.0, margin=1.07, 
         except OSError:
             pass
     return info
+
+
+# ----------------------------------------------------------------------------- real-time mesh export
+
+def export_mesh(wid, out_dir, cam, max_part_tris=7000):
+    """Write <wid>.bin: a compact indexed mesh of the current scene for the in-game 3D view.
+
+    Layout (little endian): 'CMSH', u32 version, u32 vertex count, u32 index count, u32 index size,
+    18 float32 (bbox min xyz, bbox max xyz, bake camera right xyz, up xyz, toward-camera xyz,
+    centre x, centre y, ortho scale), then 10-byte vertices (u16 xyz quantised to the bbox,
+    i8 normal xyz, u8 material tag), zero padding to 4 bytes, then the indices.
+    Coordinates are kit space: x along the barrel, y up, z toward the viewer.
+    """
+    import struct
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    # organic / remeshed parts can be huge: thin them out
+    for ob in _parts:
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.calc_loop_triangles()
+        n = len(me.loop_triangles)
+        ev.to_mesh_clear()
+        if n > max_part_tris:
+            dm = ob.modifiers.new('Dec', 'DECIMATE')
+            dm.ratio = max_part_tris / n
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    P, N, T = [], [], []
+    for ob in _parts:
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.calc_loop_triangles()
+        nt = len(me.loop_triangles)
+        if nt:
+            co = np.empty(len(me.vertices) * 3, np.float32)
+            me.vertices.foreach_get('co', co)
+            co = co.reshape(-1, 3)
+            li = np.empty(len(me.loops), np.int32)
+            me.loops.foreach_get('vertex_index', li)
+            cn = np.empty(len(me.loops) * 3, np.float32)
+            me.corner_normals.foreach_get('vector', cn)
+            cn = cn.reshape(-1, 3)
+            tl = np.empty(nt * 3, np.int32)
+            me.loop_triangles.foreach_get('loops', tl)
+            tp = np.empty(nt, np.int32)
+            me.loop_triangles.foreach_get('polygon_index', tp)
+            pm = np.empty(len(me.polygons), np.int32)
+            me.polygons.foreach_get('material_index', pm)
+            names = [(m.name if m else 'M_poly') for m in me.materials] or ['M_poly']
+            tagmap = np.array([TAG_ID.get(nm.split('.')[0][2:], 2) for nm in names], np.int32)
+            mw = np.array(ev.matrix_world, np.float32)
+            pos = co[li[tl]] @ mw[:3, :3].T + mw[:3, 3]
+            nor = cn[tl] @ mw[:3, :3].T
+            nor /= np.maximum(np.linalg.norm(nor, axis=1, keepdims=True), 1e-9)
+            P.append(pos)
+            N.append(nor)
+            T.append(np.repeat(tagmap[np.clip(pm[tp], 0, len(tagmap) - 1)], 3))
+        ev.to_mesh_clear()
+
+    def kit(a):
+        return np.stack([a[:, 0], a[:, 2], -a[:, 1]], axis=1)
+
+    pos = kit(np.concatenate(P))
+    nor = kit(np.concatenate(N))
+    tag = np.concatenate(T)
+    bmin = pos.min(axis=0)
+    bmax = pos.max(axis=0)
+    size = np.maximum(bmax - bmin, 1e-6)
+    rows = np.empty((len(pos), 7), np.int32)
+    rows[:, 0:3] = np.round((pos - bmin) / size * 65535)
+    rows[:, 3:6] = np.clip(np.round(nor * 127), -127, 127)
+    rows[:, 6] = tag
+    uniq, inv = np.unique(rows, axis=0, return_inverse=True)
+    idx = np.asarray(inv).reshape(-1, 3)
+    good = (idx[:, 0] != idx[:, 1]) & (idx[:, 1] != idx[:, 2]) & (idx[:, 0] != idx[:, 2])
+    idx = idx[good]
+    vb = np.zeros(len(uniq), dtype=np.dtype([('p', '<u2', (3,)), ('n', 'i1', (3,)), ('t', 'u1')]))
+    vb['p'] = uniq[:, 0:3]
+    vb['n'] = uniq[:, 3:6]
+    vb['t'] = uniq[:, 6]
+    isize = 2 if len(uniq) <= 65535 else 4
+    ib = idx.astype('<u2' if isize == 2 else '<u4').tobytes()
+    vbytes = vb.tobytes()
+    vbytes += bytes((4 - len(vbytes) % 4) % 4)
+
+    def k(v):
+        return (v[0], v[2], -v[1])
+
+    floats = [*bmin, *bmax, *k(cam['right']), *k(cam['up']), *k(cam['d']), cam['cx'], cam['cy'], cam['scale']]
+    head = b'CMSH' + struct.pack('<4I', 1, len(uniq), idx.size, isize) + struct.pack('<18f', *[float(f) for f in floats])
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, wid + '.bin')
+    with open(path, 'wb') as f:
+        f.write(head + vbytes + ib)
+    return {'verts': int(len(uniq)), 'tris': int(len(idx)), 'kb': round(os.path.getsize(path) / 1024, 1)}

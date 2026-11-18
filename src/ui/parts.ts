@@ -80,7 +80,7 @@ export function openItem(app: App, id: number): void {
   const m = app.openModal(`
     <div class="sheet item r${skin.rarity}">
       <button class="x" data-act="close" aria-label="Close">${ICON.close}</button>
-      <div class="stage"><canvas class="live" id="item-cv"></canvas><span class="stage-hint">Move across the render to shift the light</span></div>
+      <div class="stage"><canvas class="live" id="item-cv"></canvas><span class="stage-hint">Drag to turn it, scroll to zoom</span></div>
       <div class="item-head">
         ${rarityStamp(skin.rarity)}
         <h2><small>${esc(WEAPONS[skin.weapon].name)}</small>${esc(skin.name)}</h2>
@@ -99,7 +99,7 @@ export function openItem(app: App, id: number): void {
       </div>
       <p class="fine">Exchange fee ${Math.round(g.fee * 100)}%. Vaulted items cannot be sold or traded, and survive a redeploy.</p>
     </div>`, { cls: 'center' });
-  app.mountLive(m.querySelector<HTMLCanvasElement>('#item-cv')!, specFor(it, patternGrade(skin, it.p) === 2));
+  app.mountLive(m.querySelector<HTMLCanvasElement>('#item-cv')!, specFor(it, patternGrade(skin, it.p) === 2), { bg: true, tint: RARITIES[skin.rarity].color });
 }
 
 export const partActions = {

@@ -81,8 +81,8 @@ async function runContract(app: App, res: TradeResult): Promise<void> {
     const value = valueOf(it, app.tick());
     app.sfx.reveal(Math.max(3, skin.rarity));
     box.innerHTML = `<div class="reveal r${skin.rarity}">
-        <div class="rays" aria-hidden="true"></div>
-        <div class="stage stage-rv"><canvas class="live" id="rv-cv"></canvas></div>
+        <div class="rv-bg" aria-hidden="true" style="background-image:url(bg/armory.webp)"></div>
+        <div class="stage stage-rv"><canvas class="live" id="rv-cv"></canvas><span class="stage-hint">Drag to turn it</span></div>
         <div class="rv-info">
           <span class="verdict good">Contract honoured</span>
           ${rarityStamp(skin.rarity)}
@@ -93,7 +93,7 @@ async function runContract(app: App, res: TradeResult): Promise<void> {
         </div>
         <div class="row-btns"><button class="btn" data-act="close">Take it to the Armory</button></div>
       </div>`;
-    app.mountLive(box.querySelector<HTMLCanvasElement>('#rv-cv')!, specFor(it, patternGrade(skin, it.p) === 2));
+    app.mountLive(box.querySelector<HTMLCanvasElement>('#rv-cv')!, specFor(it, patternGrade(skin, it.p) === 2), { bg: true, tint: RARITIES[skin.rarity].color });
   } else {
     app.sfx.smash();
     box.innerHTML = `<div class="reveal failed">

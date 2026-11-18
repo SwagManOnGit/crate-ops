@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "bake": "node scripts/bake.mjs",
+    "bake": "node scripts/bake.mjs sprites",
     "balance": "node scripts/balance.mjs",
-    "bundle": "npm run build && node scripts/zip.mjs"
+    "bundle": "npm run build && node scripts/zip.mjs",
+    "meshes": "node scripts/bake.mjs meshes",
+    "armory": "node scripts/bake.mjs armory"
   },
   "devDependencies": {
     "@fontsource/barlow": "^5.3.0",

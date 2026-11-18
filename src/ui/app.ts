@@ -28,10 +28,33 @@ export interface TabDef {
 interface Live {
   cv: HTMLCanvasElement;
   spec: DrawSpec;
+  /** pointer position over the canvas, -1..1 */
   px: number;
   py: number;
   active: boolean;
   phase: number;
+  /** 3D view state */
+  spin: number;
+  tilt: number;
+  zoom: number;
+  bg: boolean;
+  tint?: [number, number, number];
+  dragging: boolean;
+  lastX: number;
+  lastY: number;
+  /** auto-spin resumes after this time (ms) */
+  resumeAt: number;
+  /** smoothed parallax */
+  sx: number;
+  sy: number;
+  last: number;
+}
+
+export interface LiveOpts {
+  /** Show the armory backdrop behind the item. */
+  bg?: boolean;
+  /** Rarity colour for the backdrop glow, as #rrggbb. */
+  tint?: string;
 }
 
 export interface ItemLike {
@@ -280,20 +303,62 @@ export class App {
 
   // ------------------------------------------------------------ live canvases
 
-  /** Keep a canvas showing a relit weapon; the pointer moves the key light. */
-  mountLive(cv: HTMLCanvasElement, spec: DrawSpec): void {
-    const live: Live = { cv, spec, px: 0, py: 0, active: false, phase: Math.random() * 6 };
+  /**
+   * Keep a canvas showing an item. Once its mesh has loaded this is a real 3D view: it spins
+   * slowly, and the player can drag to rotate it and scroll to zoom. Until then (or if 3D is
+   * unavailable) it shows the relit sprite, with the pointer moving the light.
+   */
+  mountLive(cv: HTMLCanvasElement, spec: DrawSpec, o: LiveOpts = {}): void {
+    const tint = o.tint && /^#[0-9a-f]{6}$/i.test(o.tint)
+      ? ([1, 3, 5].map((i) => Math.pow(parseInt(o.tint!.slice(i, i + 2), 16) / 255, 2.2)) as [number, number, number])
+      : undefined;
+    const live: Live = {
+      cv, spec, px: 0, py: 0, active: false, phase: Math.random() * 6,
+      spin: 0, tilt: 0, zoom: 1, bg: !!o.bg, tint, dragging: false, lastX: 0, lastY: 0, resumeAt: 0, sx: 0, sy: 0, last: 0,
+    };
     void this.r.ensure(spec.weapon, false);
     void this.r.ensure(spec.weapon, true);
-    const move = (e: PointerEvent): void => {
+    void this.r.ensureMesh(spec.weapon);
+    if (o.bg) {
+      void this.r.ensureBackdrop();
+      cv.classList.add('live-bg');
+    }
+    const at = (e: PointerEvent): void => {
       const b = cv.getBoundingClientRect();
       live.px = ((e.clientX - b.left) / b.width) * 2 - 1;
       live.py = -(((e.clientY - b.top) / b.height) * 2 - 1);
       live.active = true;
     };
-    cv.addEventListener('pointermove', move);
-    cv.addEventListener('pointerdown', move);
+    cv.addEventListener('pointerdown', (e) => {
+      at(e);
+      live.dragging = true;
+      live.lastX = e.clientX;
+      live.lastY = e.clientY;
+      cv.classList.add('grabbing');
+      try { cv.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+    });
+    cv.addEventListener('pointermove', (e) => {
+      at(e);
+      if (!live.dragging) return;
+      const b = cv.getBoundingClientRect();
+      live.spin += ((e.clientX - live.lastX) / b.width) * 4.2;
+      live.tilt = Math.max(-0.5, Math.min(0.5, live.tilt + ((e.clientY - live.lastY) / b.height) * 1.6));
+      live.lastX = e.clientX;
+      live.lastY = e.clientY;
+    });
+    const release = (): void => {
+      if (live.dragging) live.resumeAt = performance.now() + 1600;
+      live.dragging = false;
+      cv.classList.remove('grabbing');
+    };
+    cv.addEventListener('pointerup', release);
+    cv.addEventListener('pointercancel', release);
     cv.addEventListener('pointerleave', () => { live.active = false; });
+    cv.addEventListener('wheel', (e) => {
+      if (!this.r.hasMesh(spec.weapon)) return;
+      e.preventDefault();
+      live.zoom = Math.max(0.8, Math.min(2, live.zoom * (1 - e.deltaY * 0.0012)));
+    }, { passive: false });
     this.lives.push(live);
   }
 
@@ -302,17 +367,40 @@ export class App {
     this.lives = this.lives.filter((l) => l.cv.isConnected);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const l of this.lives) {
-      const w = Math.min(1280, Math.round(l.cv.clientWidth * dpr));
+      // the window is 2:1 on wide screens and taller on phones; the GL canvas caps at 1280 x 640
+      const ratio = l.cv.clientWidth ? l.cv.clientHeight / l.cv.clientWidth : 0.5;
+      let w = Math.min(1280, Math.round(l.cv.clientWidth * dpr));
+      if (w * ratio > 640) w = Math.round(640 / ratio);
       if (w < 8) continue;
-      const h = Math.round(w / 2);
+      const h = Math.max(4, Math.round(w * ratio));
       if (l.cv.width !== w || l.cv.height !== h) {
         l.cv.width = w;
         l.cv.height = h;
       }
+      const dt = l.last ? Math.min(0.1, (t - l.last) / 1000) : 0;
+      l.last = t;
       const sway = t / 1000 + l.phase;
+      const ctx = l.cv.getContext('2d')!;
+      if (this.r.hasMesh(l.spec.weapon)) {
+        // slow turntable; pauses while the player is holding the item
+        if (!l.dragging && t > l.resumeAt) l.spin += dt * 0.3;
+        const tx = l.active ? l.px : Math.sin(sway * 0.4) * 0.5;
+        const ty = l.active ? l.py : Math.cos(sway * 0.3) * 0.4;
+        l.sx += (tx - l.sx) * Math.min(1, dt * 4);
+        l.sy += (ty - l.sy) * Math.min(1, dt * 4);
+        const ok = this.r.drawMeshTo(ctx, { ...l.spec, lx: Math.sin(sway * 0.5) * 0.25, ly: 0.05 }, w, h,
+          { spin: l.spin, tilt: l.tilt, zoom: l.zoom, bg: l.bg, tint: l.tint, px: l.sx, py: l.sy });
+        if (ok) continue;
+      }
+      // sprite fallback: always 2:1, centred in the window
       const lx = l.active ? l.px : Math.sin(sway * 0.7) * 0.55;
       const ly = l.active ? l.py * 0.7 : Math.cos(sway * 0.45) * 0.22;
-      this.r.drawTo(l.cv.getContext('2d')!, { ...l.spec, lx, ly }, w, h, true);
+      const sh = Math.min(h, Math.round(w / 2));
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(0, Math.round((h - sh) / 2));
+      this.r.drawTo(ctx, { ...l.spec, lx, ly }, w, sh, true);
+      ctx.restore();
     }
   }
 

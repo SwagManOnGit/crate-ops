@@ -283,8 +283,11 @@ button.tag:hover { background: linear-gradient(180deg, #333c38, var(--panel2)); 
 
 .stage { position: relative; border-radius: 3px; overflow: hidden; background: radial-gradient(110% 95% at 50% 38%, #3a4541 0%, #1e2523 58%, #141817 100%); border: 1px solid var(--line); }
 .stage::before { content: ''; position: absolute; inset: 0; background: radial-gradient(55% 60% at 50% 52%, var(--rcs), transparent 72%); }
-.live { display: block; width: 100%; aspect-ratio: 2 / 1; position: relative; touch-action: pan-y; cursor: crosshair; filter: drop-shadow(0 16px 12px rgba(0, 0, 0, 0.55)); }
-.stage-hint { position: absolute; left: 10px; bottom: 7px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.live { display: block; width: 100%; aspect-ratio: 2 / 1; position: relative; touch-action: pan-y; cursor: grab; filter: drop-shadow(0 16px 12px rgba(0, 0, 0, 0.55)); }
+.live.grabbing { cursor: grabbing; }
+/* with the armory backdrop the canvas is opaque: no need for a (costly) filter */
+.live-bg { filter: none; }
+.stage-hint { position: absolute; left: 10px; bottom: 7px; font-size: 12px; color: var(--ink2); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); pointer-events: none; }
 .item-head { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; margin: 14px 0 12px; }
 .from { color: var(--muted); font-size: 13px; }
 .facts { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; margin-bottom: 14px; text-align: left; }
@@ -329,10 +332,10 @@ button.tag:hover { background: linear-gradient(180deg, #333c38, var(--panel2)); 
 .strip-mark::after { bottom: 0; border-bottom-color: var(--brass2); }
 
 .reveal { position: relative; min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 18px 14px; text-align: center; overflow: hidden; }
-.rays { position: absolute; left: 50%; top: 42%; width: 190vmax; height: 190vmax; margin: -95vmax 0 0 -95vmax; background: repeating-conic-gradient(var(--rcs) 0 5deg, transparent 5deg 15deg); -webkit-mask-image: radial-gradient(closest-side, #000 0, transparent 46%); mask-image: radial-gradient(closest-side, #000 0, transparent 46%); animation: spin 70s linear infinite; pointer-events: none; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.stage-rv { width: min(860px, 100%, 62vh); background: none; border: 0; overflow: visible; animation: arrive 0.5s cubic-bezier(0.2, 0.9, 0.2, 1); }
-.stage-rv::before { background: radial-gradient(48% 62% at 50% 52%, var(--rcs), transparent 72%); }
+/* the armory, out of focus, fills the whole screen behind the reveal */
+.rv-bg { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(16px) brightness(0.32) saturate(0.85); pointer-events: none; }
+.rv-bg::after { content: ''; position: absolute; inset: 0; background: radial-gradient(60% 55% at 50% 38%, var(--rcs), transparent 75%); }
+.stage-rv { width: min(980px, 100%, 80vh); border: 1px solid var(--rc); border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 22px 60px rgba(0, 0, 0, 0.65), 0 0 70px var(--rcs); animation: arrive 0.5s cubic-bezier(0.2, 0.9, 0.2, 1); }
 @keyframes arrive { from { transform: scale(0.82); opacity: 0; } }
 .rv-info { position: relative; display: flex; flex-direction: column; align-items: center; gap: 9px; width: min(560px, 100%); }
 .rv-info h2 { font-size: 34px; }
@@ -513,6 +516,8 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 28px; border-radius
   .wire li { grid-template-columns: minmax(0, 1fr) auto; }
   .wire-d { display: none; }
   .rv-info h2 { font-size: 28px; }
+  /* phones: give the 3D item a taller window */
+  .live-bg { aspect-ratio: 4 / 3; }
   .slots { gap: 4px; }
   .nav-b { font-size: 12px; }
   .cond > div { grid-template-columns: 34px minmax(0, 1fr) auto; }
@@ -537,5 +542,5 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 28px; border-radius
   .chart { height: 170px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rays, .stage-rv, .pull, .toast, .reveal.failed { animation: none; }
+  .stage-rv, .pull, .toast, .reveal.failed { animation: none; }
 }
